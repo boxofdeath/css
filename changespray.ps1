@@ -45,6 +45,7 @@ function Update-Spray {
                 Write-Output "Changed spray.vtf to $nextSpray"
                 $sprayList = $sprayList | Where-Object { $_.FullName -ne $nextSpray }
                 $sprayList | Export-Csv -Path $csvFile -NoTypeInformation
+								Write-Output "Sprays left: $($sprayList.Count)"
             } else {
                 Remove-Item -Path $csvFile
                 Write-Output "No entries left in spraylist.csv. Deleting the file and starting enumeration again."
