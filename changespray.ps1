@@ -1,57 +1,95 @@
-<# 
-Update-Spray
+<#
+.SYNOPSIS
+    This script enumerates all .vtf files in the script's directory, adds them to a CSV file, and periodically updates a specific file in the Counter-Strike Source directory.
 
-This script will:
-Enumerate all .vtf files in the script's directory and add their full paths to a CSV file called spraylist.csv.
-Randomize the items in the CSV file.
-Check if the spraylist.csv file exists before creating it. If it exists, the script will continue without doing anything.
-Print messages to the screen to inform the user about the script's actions.
-Every 15 minutes, take the file path of one of the .vtf files in the CSV file and copy it to the specified directory, then print a message to the user.
-Remove the entry from the CSV file after copying.
-Once there are no entries left in the CSV file, delete the spraylist.csv file and start the enumeration section again.
+.DESCRIPTION
+    - Enumerates all .vtf files in the script's directory.
+    - Adds each file name into an array and randomizes the order.
+    - Checks if 'spraylist.csv' exists and updates it with the file paths.
+    - Every 15 minutes, copies one of the .vtf files to the specified directory and updates the CSV file.
+    - Prints messages to the screen to inform the user of the script's actions and the number of entries left in the CSV file.
+    - Includes a text-based rainbow progress bar counting down the time until the next iteration.
+
+.PARAMETERS
+    None
+
+.EXAMPLE
+    .\YourScriptName.ps1
+    This will run the script and start the enumeration and update process.
+
+.NOTES
+    Ensure you have the necessary permissions to copy files to the specified directory.
+    The script will restart the enumeration process once all entries in the CSV file are processed.
 #>
 
+# Function to display a rainbow progress bar
+function Show-RainbowProgressBar {
+    param (
+        [int]$minutes
+    )
 
-
-
-# Define the directory and CSV file path
-$directory = Get-Location
-$csvFile = "$directory\spraylist.csv"
-$sprayPath = "C:\Program Files (x86)\Steam\steamapps\common\Counter-Strike Source\cstrike\materials\vgui\logos\spray.vtf"
-
-# Function to enumerate .vtf files and create the CSV file
-function Create-SprayList {
-    Write-Output "Enumerating .vtf files in the directory..."
-    $vtfFiles = Get-ChildItem -Path $directory -Filter *.vtf | Select-Object -ExpandProperty FullName
-    $vtfFiles | Get-Random | Export-Csv -Path $csvFile -NoTypeInformation
-    Write-Output "Created spraylist.csv with randomized .vtf file paths."
-}
-
-# Check if the CSV file exists
-if (-Not (Test-Path -Path $csvFile)) {
-    Create-SprayList
-} else {
-    Write-Output "spraylist.csv already exists. Continuing with the script..."
-}
-
-# Function to update the spray.vtf file every 15 minutes
-function Update-Spray {
-    while ($true) {
-        if (Test-Path -Path $csvFile) {
-            $sprayList = Import-Csv -Path $csvFile
-            if ($sprayList.Count -gt 0) {
-                $nextSpray = $sprayList.FullName
-                Copy-Item -Path $nextSpray -Destination $sprayPath -Force
-                Write-Output "Changed spray.vtf to $nextSpray"
-                $sprayList = $sprayList | Where-Object { $_.FullName -ne $nextSpray }
-                $sprayList | Export-Csv -Path $csvFile -NoTypeInformation
-								Write-Output "Sprays left: $($sprayList.Count)"
-            } else {
-                Remove-Item -Path $csvFile
-                Write-Output "No entries left in spraylist.csv. Deleting the file and starting enumeration again."
-                Create-SprayList
-            }
-        }
-        Start-Sleep -Seconds 900
+    $colors = @("Red", "Yellow", "Green", "Cyan", "Blue", "Magenta")
+    for ($i = $minutes; $i -gt 0; $i--) {
+        $color = $colors[$i % $colors.Count]
+        Write-Host "Next update in $i minutes." -ForegroundColor $color -NoNewline
+        Start-Sleep -Seconds 60
+        Write-Host "`r`n"
     }
 }
+
+# Enumerate all .vtf files in the script's directory
+$vtfFiles = Get-ChildItem -Path . -Filter *.vtf
+
+if ($vtfFiles.Count -eq 0) {
+    Write-Host "No .vtf files found in the directory. Please place the .vtf files in the directory and try again."
+    exit
+}
+
+# Add each file name into an array and randomize the order
+$fileArray = $vtfFiles | ForEach-Object { $_.FullName }
+$fileArray = $fileArray | Sort-Object { Get-Random }
+
+# Check if 'spraylist.csv' exists
+$csvFile = "spraylist.csv"
+if (Test-Path $csvFile) {
+    $existingEntries = Import-Csv $csvFile
+    Write-Host "spraylist.csv exists with $($existingEntries.Count) entries."
+} else {
+    $existingEntries = @()
+}
+
+# Add each item in the array to the CSV file
+foreach ($file in $fileArray) {
+    $existingEntries += [PSCustomObject]@{ FilePath = $file }
+}
+$existingEntries | Export-Csv -Path $csvFile -NoTypeInformation
+
+Write-Host "Added $($fileArray.Count) entries to spraylist.csv."
+
+# Function to update spray.vtf every 15 minutes
+function Update-Spray {
+    while ($true) {
+        $entries = Import-Csv $csvFile
+        if ($entries.Count -eq 0) {
+            Write-Host "No entries left in spraylist.csv. Deleting the file and restarting enumeration."
+            Remove-Item $csvFile
+            Start-Sleep -Seconds 5
+            # Restart the script
+            & $PSCommandPath
+            exit
+        }
+
+        $entry = $entries[0]
+        Copy-Item -Path $entry.FilePath -Destination "C:\Program Files (x86)\Steam\steamapps\common\Counter-Strike Source\cstrike\materials\vgui\logos\spray.vtf"
+        $entries = $entries | Where-Object { $_.FilePath -ne $entry.FilePath }
+        $entries | Export-Csv -Path $csvFile -NoTypeInformation
+
+        Write-Host "Changed spray.vtf file. $($entries.Count) entries left in spraylist.csv."
+
+        # Rainbow progress bar
+        Show-RainbowProgressBar -minutes 15
+    }
+}
+
+# Start the update function
+Update-Spray
