@@ -25,71 +25,61 @@
 # Function to display a rainbow progress bar
 function Show-RainbowProgressBar {
     param (
-        [int]$minutes
+        [int]$Seconds
     )
-
     $colors = @("Red", "Yellow", "Green", "Cyan", "Blue", "Magenta")
-    for ($i = $minutes; $i -gt 0; $i--) {
-        $color = $colors[$i % $colors.Count]
-        Write-Host "Next update in $i minutes." -ForegroundColor $color -NoNewline
-        Start-Sleep -Seconds 60
-        Write-Host "`r`n"
+    for ($i = $Seconds; $i -ge 0; $i--) {
+        $color = $colors[$i % $colors.Length]
+        Write-Host -NoNewline -ForegroundColor $color "`rProgress: $i seconds remaining"
+        Start-Sleep -Seconds 1
+    }
+    Write-Host "`rProgress: Complete!`n"
+}
+
+# Function to enumerate .vtf files and handle CSV
+function Enumerate-VTFs {
+    $vtfFiles = Get-ChildItem -Path . -Filter *.vtf
+    if ($vtfFiles.Count -eq 0) {
+        Write-Host "No .vtf files found. Please place them in the directory."
+        return
+    }
+
+    $csvFile = "spraylist.csv"
+    if (Test-Path $csvFile) {
+        $entries = Import-Csv $csvFile
+        Write-Host "$($entries.Count) entries left in the CSV file."
+    } else {
+        $vtfArray = @()
+        foreach ($file in $vtfFiles) {
+            $vtfArray += $file.Name
+        }
+        $vtfArray = $vtfArray | Sort-Object {Get-Random}
+        $vtfArray | Export-Csv -Path $csvFile -NoTypeInformation
+        Write-Host "Added $($vtfArray.Count) .vtf files to the CSV file."
     }
 }
-
-# Enumerate all .vtf files in the script's directory
-$vtfFiles = Get-ChildItem -Path . -Filter *.vtf
-
-if ($vtfFiles.Count -eq 0) {
-    Write-Host "No .vtf files found in the directory. Please place the .vtf files in the directory and try again."
-    exit
-}
-
-# Add each file name into an array and randomize the order
-$fileArray = $vtfFiles | ForEach-Object { $_.FullName }
-$fileArray = $fileArray | Sort-Object { Get-Random }
-
-# Check if 'spraylist.csv' exists
-$csvFile = "spraylist.csv"
-if (Test-Path $csvFile) {
-    $existingEntries = Import-Csv $csvFile
-    Write-Host "spraylist.csv exists with $($existingEntries.Count) entries."
-} else {
-    $existingEntries = @()
-}
-
-# Add each item in the array to the CSV file
-foreach ($file in $fileArray) {
-    $existingEntries += [PSCustomObject]@{ FilePath = $file }
-}
-$existingEntries | Export-Csv -Path $csvFile -NoTypeInformation
-
-Write-Host "Added $($fileArray.Count) entries to spraylist.csv."
 
 # Function to update spray.vtf every 15 minutes
 function Update-Spray {
-    while ($true) {
+    $csvFile = "spraylist.csv"
+    while (Test-Path $csvFile) {
         $entries = Import-Csv $csvFile
         if ($entries.Count -eq 0) {
-            Write-Host "No entries left in spraylist.csv. Deleting the file and restarting enumeration."
             Remove-Item $csvFile
-            Start-Sleep -Seconds 5
-            # Restart the script
-            & $PSCommandPath
-            exit
+            Enumerate-VTFs
+            continue
         }
 
-        $entry = $entries[0]
-        Copy-Item -Path $entry.FilePath -Destination "C:\Program Files (x86)\Steam\steamapps\common\Counter-Strike Source\cstrike\materials\vgui\logos\spray.vtf"
-        $entries = $entries | Where-Object { $_.FilePath -ne $entry.FilePath }
+        $nextSpray = $entries[0]."Name"
+        Copy-Item -Path $nextSpray -Destination "C:\Program Files (x86)\Steam\steamapps\common\Counter-Strike Source\cstrike\materials\vgui\logos\spray.vtf"
+        $entries = $entries | Where-Object { $_.Name -ne $nextSpray }
         $entries | Export-Csv -Path $csvFile -NoTypeInformation
+        Write-Host "Changed spray.vtf file. $($entries.Count) entries left in the CSV file."
 
-        Write-Host "Changed spray.vtf file. $($entries.Count) entries left in spraylist.csv."
-
-        # Rainbow progress bar
-        Show-RainbowProgressBar -minutes 15
+        Show-RainbowProgressBar -Seconds 900
     }
 }
 
-# Start the update function
+# Main script execution
+Enumerate-VTFs
 Update-Spray
